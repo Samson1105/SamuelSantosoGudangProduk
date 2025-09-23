@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Transaksi Penjualan</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    body {
+      background-color: #0d6efd; /* biru background */
+    }
+    h1 {
+      color: #ffffff;
+      font-weight: bold;
+    }
+    .card {
+      border: 2px solid #000; /* outline hitam hanya untuk card */
+      background-color: #ffffff;
+      border-radius: 10px;
+      box-shadow: 0px 4px 8px rgba(0,0,0,0.2);
+    }
+    .btn-primary {
+      background-color: #0d6efd;
+      border-color: #0d6efd;
+    }
+    .btn-primary:hover {
+      background-color: #0b5ed7;
+      border-color: #0a58ca;
+    }
+    .btn-success {
+      background-color: #1c1c1c;
+      border-color: #1c1c1c;
+    }
+    .btn-success:hover {
+      background-color: #000;
+      border-color: #000;
+    }
+    .btn-danger {
+      background-color: #dc3545;
+      border-color: #dc3545;
+    }
+    .table thead {
+      background-color: #1c1c1c;
+      color: #fff;
+    }
+    .table tfoot {
+      background-color: #e9ecef;
+      font-weight: bold;
+    }
+    .nama-user {
+      font-weight: bold;
+      color: #ffffff;
+    }
+  </style>
+</head>
+
+<body>
+
+<div class="container py-4">
+  <h1 class="mb-4 text-center">💰 Transaksi Penjualan</h1>
+
+  <!-- Form Input -->
+  <div class="card p-3 mb-4">
+    <div class="row g-2 align-items-center">
+      <div class="col-md-4">
+        <select id="produk" class="form-select" onchange="tampilHarga()">
+          <option value="">Pilih Produk</option>
+        </select>
+      </div>
+      <div class="col-md-2">
+        <input type="number" id="jumlah" class="form-control" placeholder="Jumlah">
+      </div>
+      <div class="col-md-2">
+        <input type="text" id="harga" class="form-control" placeholder="Harga" readonly>
+      </div>
+      <div class="col-auto">
+        <button class="btn btn-primary" onclick="tambahDetail()">Tambah</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tabel Keranjang -->
+  <div class="card p-3">
+    <h5>🛒 Keranjang</h5>
+    <table class="table table-bordered bg-white">
+      <thead>
+        <tr>
+          <th>Produk</th>
+          <th>Jumlah</th>
+          <th>Harga</th>
+          <th>Subtotal</th>
+          <th>Aksi</th>
+        </tr>
+      </thead>
+      <tbody id="keranjang"></tbody>
+      <tfoot>
+        <tr>
+          <td colspan="3" class="text-end"><strong>Total</strong></td>
+          <td colspan="2"><strong>Rp <span id="total">0</span></strong></td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+
+  <!-- Simpan -->
+  <div class="d-flex align-items-center mt-3 gap-3">
+    <button class="btn btn-success" onclick="simpanTransaksi()">💾 Simpan Transaksi</button>
+    <span class="nama-user">Samuel Santoso Setiawan</span>
+  </div>
+</div>
+
+<script>
+  // Supabase setup
+  const SUPABASE_URL = "https://hpodaqivkvsouvqfklsw.supabase.co";
+  const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imhwb2RhcWl2a3Zzb3V2cWZrbHN3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTc0NjQ3NjcsImV4cCI6MjA3MzA0MDc2N30.3TNcN7PGaOsf8ZVOsH2hMFkHvWRp1rqbt1EmHpu3rw0"; 
+  const { createClient } = supabase;
+  const db = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+  let produkList = [];
+  let keranjang = [];
+  let total = 0;
+
+  async function loadProduk() {
+    const { data, error } = await db.from("produk").select("*").order("nama", { ascending: true });
+    if (error) {
+      Swal.fire("Error", "Gagal memuat produk: " + error.message, "error");
+      return;
+    }
+    produkList = data;
+    let select = document.getElementById("produk");
+    data.forEach(p => {
+      let opt = document.createElement("option");
+      opt.value = p.id;
+      opt.setAttribute("data-harga", p.harga);
+      opt.textContent = p.nama;
+      select.appendChild(opt);
+    });
+  }
+
+  function tampilHarga() {
+    let produk = document.getElementById("produk");
+    let harga = produk.options[produk.selectedIndex].getAttribute("data-harga") || "";
+    document.getElementById("harga").value = harga;
+  }
+
+  function tambahDetail() {
+    let produk = document.getElementById("produk");
+    let id_produk = produk.value;
+    let nama = produk.options[produk.selectedIndex].text;
+    let harga = parseFloat(document.getElementById("harga").value);
+    let jumlah = parseInt(document.getElementById("jumlah").value);
+
+    if (!id_produk || !harga || !jumlah) {
+      Swal.fire("Oops!", "Pilih produk dan isi jumlah", "warning");
+      return;
+    }
+
+    let subtotal = harga * jumlah;
+    keranjang.push({ id_produk, nama, harga, jumlah, subtotal });
+    total += subtotal;
+    renderKeranjang();
+
+    document.getElementById("jumlah").value = "";
+  }
+
+  function hapusItem(index) {
+    total -= keranjang[index].subtotal;
+    keranjang.splice(index, 1);
+    renderKeranjang();
+  }
+
+  function renderKeranjang() {
+    let tbody = document.getElementById("keranjang");
+    tbody.innerHTML = "";
+    keranjang.forEach((item, i) => {
+      let tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${item.nama}</td>
+        <td>${item.jumlah}</td>
+        <td>Rp ${item.harga.toLocaleString()}</td>
+        <td>Rp ${item.subtotal.toLocaleString()}</td>
+        <td><button class="btn btn-danger btn-sm" onclick="hapusItem(${i})">Hapus</button></td>
+      `;
+      tbody.appendChild(tr);
+    });
+    document.getElementById("total").textContent = total.toLocaleString();
+  }
+
+  async function simpanTransaksi() {
+    if (keranjang.length === 0) {
+      Swal.fire("Oops!", "Keranjang masih kosong", "warning");
+      return;
+    }
+
+    const { data: penjualan, error: err1 } = await db.from("penjualan").insert([{ 
+      tanggal: new Date().toISOString(), 
+      total 
+    }]).select("id").single();
+
+    if (err1) {
+      Swal.fire("Error", "Gagal simpan penjualan: " + err1.message, "error");
+      return;
+    }
+
+    let id_penjualan = penjualan.id;
+
+    let detailInsert = keranjang.map(d => ({
+      id_penjualan,
+      id_produk: d.id_produk,
+      jumlah: d.jumlah,
+      harga: d.harga,
+      subtotal: d.subtotal
+    }));
+
+    const { error: err2 } = await db.from("penjualan_detail").insert(detailInsert);
+    if (err2) {
+      Swal.fire("Error", "Gagal simpan detail: " + err2.message, "error");
+      return;
+    }
+
+    Swal.fire("Sukses", "Transaksi berhasil disimpan", "success");
+    keranjang = [];
+    total = 0;
+    renderKeranjang();
+  }
+
+  loadProduk();
+</script>
+
+</body>
+</html>
