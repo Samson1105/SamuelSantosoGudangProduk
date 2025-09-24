@@ -15,7 +15,7 @@
       font-weight: bold;
     }
     .card {
-      border: 2px solid #000; /* outline hitam hanya untuk card */
+      border: 2px solid #000; /* outline hitam */
       background-color: #ffffff;
       border-radius: 10px;
       box-shadow: 0px 4px 8px rgba(0,0,0,0.2);
@@ -26,15 +26,10 @@
     }
     .btn-primary:hover {
       background-color: #0b5ed7;
-      border-color: #0a58ca;
     }
     .btn-success {
-      background-color: #1c1c1c;
-      border-color: #1c1c1c;
-    }
-    .btn-success:hover {
-      background-color: #000;
-      border-color: #000;
+      background-color: #198754;
+      border-color: #198754;
     }
     .btn-danger {
       background-color: #dc3545;
@@ -44,8 +39,12 @@
       background-color: #1c1c1c;
       color: #fff;
     }
-    .table tfoot {
-      background-color: #e9ecef;
+    .stock-low {
+      color: red;
+      font-weight: bold;
+    }
+    .stock-ok {
+      color: green;
       font-weight: bold;
     }
     .nama-user {
@@ -56,7 +55,6 @@
 </head>
 
 <body>
-
 <div class="container py-4">
   <h1 class="mb-4 text-center">💰 Transaksi Penjualan</h1>
 
@@ -75,9 +73,24 @@
         <input type="text" id="harga" class="form-control" placeholder="Harga" readonly>
       </div>
       <div class="col-auto">
-        <button class="btn btn-primary" onclick="tambahDetail()">Tambah</button>
+        <button id="tambah-btn" class="btn btn-primary">Tambah</button>
       </div>
     </div>
+  </div>
+
+  <!-- Stok Produk -->
+  <div class="card p-3 mb-4">
+    <h5>📦 Stok Produk</h5>
+    <table class="table table-bordered bg-white">
+      <thead>
+        <tr>
+          <th>Produk</th>
+          <th>Harga</th>
+          <th>Stok</th>
+        </tr>
+      </thead>
+      <tbody id="stok-produk"></tbody>
+    </table>
   </div>
 
   <!-- Tabel Keranjang -->
@@ -103,9 +116,10 @@
     </table>
   </div>
 
-  <!-- Simpan -->
+  <!-- Simpan + Erase -->
   <div class="d-flex align-items-center mt-3 gap-3">
-    <button class="btn btn-success" onclick="simpanTransaksi()">💾 Simpan Transaksi</button>
+    <button class="btn btn-success" id="simpan-btn">💾 Simpan Transaksi</button>
+    <button class="btn btn-danger" id="erase-btn">🗑️Erase Transaksi</button>
     <span class="nama-user">Samuel Santoso Setiawan</span>
   </div>
 </div>
@@ -118,17 +132,16 @@
   const db = createClient(SUPABASE_URL, SUPABASE_KEY);
 
   let produkList = [];
-  let keranjang = [];
-  let total = 0;
+  let keranjang = []; // hanya simpan {id, jumlah}
 
   async function loadProduk() {
     const { data, error } = await db.from("produk").select("*").order("nama", { ascending: true });
-    if (error) {
-      Swal.fire("Error", "Gagal memuat produk: " + error.message, "error");
-      return;
-    }
+    if (error) return Swal.fire("Error", error.message, "error");
     produkList = data;
+
+    // dropdown produk
     let select = document.getElementById("produk");
+    select.innerHTML = `<option value="">Pilih Produk</option>`;
     data.forEach(p => {
       let opt = document.createElement("option");
       opt.value = p.id;
@@ -136,36 +149,38 @@
       opt.textContent = p.nama;
       select.appendChild(opt);
     });
+
+    renderStokProduk();
   }
 
   function tampilHarga() {
     let produk = document.getElementById("produk");
-    let harga = produk.options[produk.selectedIndex].getAttribute("data-harga") || "";
+    let harga = produk.options[produk.selectedIndex]?.getAttribute("data-harga") || "";
     document.getElementById("harga").value = harga;
   }
 
-  function tambahDetail() {
-    let produk = document.getElementById("produk");
-    let id_produk = produk.value;
-    let nama = produk.options[produk.selectedIndex].text;
-    let harga = parseFloat(document.getElementById("harga").value);
+  function tambahItem() {
+    let id = document.getElementById("produk").value;
     let jumlah = parseInt(document.getElementById("jumlah").value);
+    if (!id || !jumlah) return Swal.fire("Oops!", "Pilih produk dan isi jumlah", "warning");
 
-    if (!id_produk || !harga || !jumlah) {
-      Swal.fire("Oops!", "Pilih produk dan isi jumlah", "warning");
-      return;
+    let produk = produkList.find(p => p.id == id);
+    if (jumlah > produk.stok) return Swal.fire("Stok Tidak Cukup", `Stok ${produk.nama} hanya ${produk.stok}`, "error");
+
+    let existing = keranjang.find(i => i.id == id);
+    if (existing) {
+      if (existing.jumlah + jumlah > produk.stok) {
+        return Swal.fire("Stok Tidak Cukup", `Stok ${produk.nama} hanya ${produk.stok}`, "error");
+      }
+      existing.jumlah += jumlah;
+    } else {
+      keranjang.push({ id, jumlah });
     }
-
-    let subtotal = harga * jumlah;
-    keranjang.push({ id_produk, nama, harga, jumlah, subtotal });
-    total += subtotal;
     renderKeranjang();
-
     document.getElementById("jumlah").value = "";
   }
 
   function hapusItem(index) {
-    total -= keranjang[index].subtotal;
     keranjang.splice(index, 1);
     renderKeranjang();
   }
@@ -173,60 +188,86 @@
   function renderKeranjang() {
     let tbody = document.getElementById("keranjang");
     tbody.innerHTML = "";
+    let total = 0;
+
     keranjang.forEach((item, i) => {
-      let tr = document.createElement("tr");
-      tr.innerHTML = `
-        <td>${item.nama}</td>
-        <td>${item.jumlah}</td>
-        <td>Rp ${item.harga.toLocaleString()}</td>
-        <td>Rp ${item.subtotal.toLocaleString()}</td>
-        <td><button class="btn btn-danger btn-sm" onclick="hapusItem(${i})">Hapus</button></td>
+      let p = produkList.find(prod => prod.id == item.id);
+      let subtotal = p.harga * item.jumlah;
+      total += subtotal;
+      tbody.innerHTML += `
+        <tr>
+          <td>${p.nama}</td>
+          <td>${item.jumlah}</td>
+          <td>Rp ${p.harga.toLocaleString()}</td>
+          <td>Rp ${subtotal.toLocaleString()}</td>
+          <td><button class="btn btn-danger btn-sm" onclick="hapusItem(${i})">Hapus</button></td>
+        </tr>
       `;
-      tbody.appendChild(tr);
     });
+
     document.getElementById("total").textContent = total.toLocaleString();
   }
 
+  function renderStokProduk() {
+    let tbody = document.getElementById("stok-produk");
+    tbody.innerHTML = "";
+    produkList.forEach(p => {
+      let stockClass = p.stok < 5 ? "stock-low" : "stock-ok";
+      tbody.innerHTML += `
+        <tr>
+          <td>${p.nama}</td>
+          <td>Rp ${p.harga.toLocaleString()}</td>
+          <td class="${stockClass}">${p.stok}</td>
+        </tr>
+      `;
+    });
+  }
+
   async function simpanTransaksi() {
-    if (keranjang.length === 0) {
-      Swal.fire("Oops!", "Keranjang masih kosong", "warning");
-      return;
-    }
+    if (keranjang.length === 0) return Swal.fire("Oops!", "Keranjang kosong", "warning");
 
-    const { data: penjualan, error: err1 } = await db.from("penjualan").insert([{ 
-      tanggal: new Date().toISOString(), 
-      total 
-    }]).select("id").single();
+    let total = keranjang.reduce((sum, item) => {
+      let p = produkList.find(prod => prod.id == item.id);
+      return sum + (p.harga * item.jumlah);
+    }, 0);
 
-    if (err1) {
-      Swal.fire("Error", "Gagal simpan penjualan: " + err1.message, "error");
-      return;
-    }
+    // Insert penjualan
+    const { data: penjualan, error } = await db.from("penjualan").insert([{ 
+      tanggal: new Date().toISOString(), total 
+    }]).select().single();
 
-    let id_penjualan = penjualan.id;
+    if (error) return Swal.fire("Error", error.message, "error");
 
-    let detailInsert = keranjang.map(d => ({
-      id_penjualan,
-      id_produk: d.id_produk,
-      jumlah: d.jumlah,
-      harga: d.harga,
-      subtotal: d.subtotal
-    }));
+    // Insert detail
+    let details = keranjang.map(item => {
+      let p = produkList.find(prod => prod.id == item.id);
+      return { id_penjualan: penjualan.id, id_produk: p.id, jumlah: item.jumlah, harga: p.harga, subtotal: p.harga * item.jumlah };
+    });
+    await db.from("penjualan_detail").insert(details);
 
-    const { error: err2 } = await db.from("penjualan_detail").insert(detailInsert);
-    if (err2) {
-      Swal.fire("Error", "Gagal simpan detail: " + err2.message, "error");
-      return;
+    // Update stok
+    for (let item of keranjang) {
+      let p = produkList.find(prod => prod.id == item.id);
+      await db.from("produk").update({ stok: p.stok - item.jumlah }).eq("id", p.id);
     }
 
     Swal.fire("Sukses", "Transaksi berhasil disimpan", "success");
     keranjang = [];
-    total = 0;
+    await loadProduk();
     renderKeranjang();
   }
 
+  function eraseTransaksi() {
+    keranjang = [];
+    renderKeranjang();
+    Swal.fire("Dihapus", "Keranjang sudah dikosongkan", "info");
+  }
+
+  document.getElementById("tambah-btn").addEventListener("click", tambahItem);
+  document.getElementById("simpan-btn").addEventListener("click", simpanTransaksi);
+  document.getElementById("erase-btn").addEventListener("click", eraseTransaksi);
+
   loadProduk();
 </script>
-
 </body>
 </html>
